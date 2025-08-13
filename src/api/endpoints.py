@@ -18,7 +18,7 @@ from src.core.model_manager import model_manager
 router = APIRouter()
 
 openai_client = OpenAIClient(
-    config.openai_api_key,
+    config.openai_api_key or "sk-placeholder",  # Placeholder key, actual key comes from client request
     config.openai_base_url,
     config.request_timeout,
     api_version=config.azure_api_version,
@@ -56,6 +56,13 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
         # Generate unique request ID for cancellation tracking
         request_id = str(uuid.uuid4())
 
+        # Extract OpenAI API key from request headers
+        openai_api_key = None
+        if x_api_key and x_api_key.startswith("sk-"):
+            openai_api_key = x_api_key
+        elif authorization and authorization.startswith("Bearer sk-"):
+            openai_api_key = authorization.replace("Bearer ", "")
+        
         # Convert Claude request to OpenAI format
         openai_request = convert_claude_to_openai(request, model_manager)
 
@@ -67,7 +74,7 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
             # Streaming response - wrap in error handling
             try:
                 openai_stream = openai_client.create_chat_completion_stream(
-                    openai_request, request_id
+                    openai_request, request_id, openai_api_key
                 )
                 return StreamingResponse(
                     convert_openai_streaming_to_claude_with_cancellation(
@@ -101,7 +108,7 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
         else:
             # Non-streaming response
             openai_response = await openai_client.create_chat_completion(
-                openai_request, request_id
+                openai_request, request_id, openai_api_key
             )
             claude_response = convert_openai_to_claude_response(
                 openai_response, request
@@ -162,23 +169,31 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "openai_api_configured": bool(config.openai_api_key),
-        "api_key_valid": config.validate_api_key(),
+        "openai_api_configured": True,  # Proxy can work without env API key if client provides one
+        "api_key_valid": True,  # Validation now happens per request
         "client_api_key_validation": bool(config.anthropic_api_key),
     }
 
 
 @router.get("/test-connection")
-async def test_connection():
+async def test_connection(x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
     """Test API connectivity to OpenAI"""
     try:
+        # Extract OpenAI API key from request headers
+        openai_api_key = None
+        if x_api_key and x_api_key.startswith("sk-"):
+            openai_api_key = x_api_key
+        elif authorization and authorization.startswith("Bearer sk-"):
+            openai_api_key = authorization.replace("Bearer ", "")
+        
         # Simple test request to verify API connectivity
         test_response = await openai_client.create_chat_completion(
             {
                 "model": config.small_model,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "max_tokens": 5,
-            }
+            },
+            api_key=openai_api_key
         )
 
         return {
@@ -216,7 +231,7 @@ async def root():
         "config": {
             "openai_base_url": config.openai_base_url,
             "max_tokens_limit": config.max_tokens_limit,
-            "api_key_configured": bool(config.openai_api_key),
+            "api_key_configured": bool(config.openai_api_key),  # Environment API key is optional
             "client_api_key_validation": bool(config.anthropic_api_key),
             "big_model": config.big_model,
             "small_model": config.small_model,

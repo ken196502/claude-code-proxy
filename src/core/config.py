@@ -5,8 +5,9 @@ import sys
 class Config:
     def __init__(self):
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
+        # OPENAI_API_KEY is now optional since clients can provide their own
         if not self.openai_api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
+            print("Warning: OPENAI_API_KEY not set in environment. Clients must provide their own API key.")
         
         # Add Anthropic API key for client validation
         self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
