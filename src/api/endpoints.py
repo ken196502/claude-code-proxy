@@ -58,6 +58,9 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
 
         # Extract OpenAI API key from request headers
         openai_api_key = None
+        x_api_key = http_request.headers.get("x-api-key")
+        authorization = http_request.headers.get("authorization")
+        
         if x_api_key and x_api_key.startswith("sk-"):
             openai_api_key = x_api_key
         elif authorization and authorization.startswith("Bearer sk-"):
@@ -176,7 +179,7 @@ async def health_check():
 
 
 @router.get("/test-connection")
-async def test_connection(x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
+async def test_connection(request: Request, x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
     """Test API connectivity to OpenAI"""
     try:
         # Extract OpenAI API key from request headers
